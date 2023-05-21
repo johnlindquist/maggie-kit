@@ -1,182 +1,155 @@
+import { Configuration, OpenAIApi } from "openai"
 import { ChatOpenAI } from "langchain/chat_models"
 import { ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate } from "langchain/prompts"
 import { ConversationChain } from "langchain/chains"
 import { CallbackHandlerMethods } from "langchain/callbacks"
+import { Shortcut } from "@johnlindquist/kit"
 
-type DictateProps = {
-  placeholder?: string
-  preview?: string
-}
+let controller = new AbortController()
 
-let defaultDictateProps:DictateProps = {
-  placeholder: `Recording...`,
-  preview: `Speak into the microphone and I'll transcribe it.`,
-}
-export let dictate = async ({placeholder, preview}:DictateProps = defaultDictateProps) => {
-  let { Configuration, OpenAIApi } = await import("openai")
-  let config = new Configuration({
-    apiKey: await env("OPENAI_API_KEY"),
-  })
-
-  let openai = new OpenAIApi(config)
-  let buffer = await mic({
-    placeholder,
-    preview,
-  })
-
-  let html = `<div class="h-full w-full flex flex-col justify-center items-center text-text-base">
-  <h1 class="text-5xl animate-pulse">Whispering...</h1>
-</div>`
-
-  return await div({
-    html,
-    ignoreBlur: true,
-    onInit: async el => {
-      let stream = Readable.from(buffer)
-      // https://github.com/openai/openai-node/issues/77#issuecomment-1463150451
-      // @ts-ignore
-      stream.path = "speech.webm"
-      // @ts-ignore
-      let response = await openai.createTranscription(stream, "whisper-1")
-      submit(response.data.text)
-    },
-  })
-}
-
-// We're manually managing "memory" to get the current text from the editor
-export let createAIEditor = async (systemPrompt: string, modelName = "gpt-4") => {
-  let editorText = ``
-  return async (instructions: string) => {
-    let { default: Bottleneck } = await import("bottleneck")
-    let limiter = new Bottleneck({
-      maxConcurrent: 1,
-      minTime: 0,
-    })
-  
-    let running = false
-  
+export let createAIStreamer = async (systemPrompt: string, modelName = "gpt-4") => {
+  return (instructions: string = "", currentText: string = "") => {
     let logPath = tmpPath(`transform-${Date.now()}.txt`)
-  
+
+    let running = false
     let callbacks = [
       {
         handleLLMStart: async (llm, prompt) => {
           running = true
           log({ prompt })
         },
-        handleLLMNewToken: limiter.wrap(async token => {
+        handleLLMNewToken: async token => {
           if (!token) return
           await editor.append(token)
           await appendFile(logPath, token)
-        }),
+        },
         handleLLMEnd: async () => {
           running = false
+          await editor.append("\n\n")
         },
       } as CallbackHandlerMethods,
     ]
-  
+
     let prompt = ChatPromptTemplate.fromPromptMessages([
       SystemMessagePromptTemplate.fromTemplate(
         `{systemPrompt}
   --- Chat History ---    
-  {editorText}    
+  {currentText}    
   --- End Chat History ---
       `.trim()
       ),
       HumanMessagePromptTemplate.fromTemplate(`{instructions}`),
     ])
-  
+
     let llm = new ChatOpenAI({
       modelName,
       streaming: true,
       callbacks,
     })
-  
-  
-    let controller = new AbortController()
-  
+
     let chain = new ConversationChain({
       llm,
       prompt,
     })
-  
 
-    let value = `${editorText}
-    
-${instructions}`.trim()
+    controller = new AbortController()
 
-    return editor({
-      value: value + `\n\n`,
-      onSubmit: async input => {
-        editorText = input
-      },
-      shortcuts: [
-        // {
-        //   name: "Stop Generating",
-        //   key: `${cmd}+0`,
-        //   onPress: async input => {
-        //     editorText = input
-        //     log({ running })
-        //     if (running) controller.abort()
-        //   },
-        //   bar: "right",
-        // },
-        // Experimental: Not working correctly
-        // {
-        //   name: "Generate More",
-        //   key: `${cmd}+2`,
-        //   onPress: async input => {
-        //     editorText = input
-        //     new ConversationChain({
-        //       llm,
-        //       prompt,
-        //     }).call({
-        //       instructions: `Complete the sentence from right before "End Chat History". Make sure to follow any previous rules.`,
-        //       systemPrompt,
-        //       editorText,
-        //       signal: getSignal(),
-        //     })
-        //   },
-        //   bar: "right",
-        // },
-        {
-          name: "Dictate More",
-          key: `${cmd}+.`,
-          bar: "right",
-          onPress: async input => {
-            editorText = input
-            if (running) controller.abort()
-            submit(input)
-          },
-        },
-        {
-          name: "Close",
-          key: `${cmd}+w`,
-          onPress: async input => {
-            editorText = input
-            if (running) controller.abort()
-            let finalLogPath = tmpPath(`conversation-${Date.now()}.txt`)
-            await writeFile(finalLogPath, editorText)
-            process.exit()
-          },
-          bar: "left"
-        }
-      ],
-      scrollTo: "bottom",
-      onInit: async () => {
-        chain.call({
-          instructions,
-          systemPrompt,
-          editorText,
-          signal: controller.signal,
-        })
-      },
-      onEscape: async input => {
-        if(running) {
-          controller.abort()
-        }else{
-          process.exit()
-        }
-      },
+    chain.call({
+      instructions,
+      systemPrompt,
+      currentText,
+      signal: controller.signal,
     })
+
+    return controller
   }
 }
+
+type ShortcutsWithDictate = {
+  shortcuts: Shortcut[]
+  dictate: (input?: string) => void
+}
+
+export let createShortcuts = async (
+  aiStreamer: Awaited<ReturnType<typeof createAIStreamer>>,
+  startWithDictate = false
+): Promise<ShortcutsWithDictate> => {
+  let config = new Configuration({
+    apiKey: await env("OPENAI_API_KEY"),
+  })
+
+  let openai = new OpenAIApi(config)
+
+  let onPressStopDictation = async () => {
+    await mic.stop()
+    await setShortcuts(dictateShortcuts)
+  }
+
+  let onPressDictate = async input => {
+    await setShortcuts(stopShortcuts)
+    let buffer = await mic({
+      dot: true,
+    })
+
+    let stream = Readable.from(buffer)
+    // @ts-ignore
+    stream.path = "speech.webm"
+    // @ts-ignore (bug in openai)
+    let response = await openai.createTranscription(stream, "whisper-1")
+
+    await editor.append(response.data.text)
+
+    await editor.append("\n\n")
+
+    controller = aiStreamer(response.data.text, input)
+  }
+  let closeShortcut = {
+    name: `Close`,
+    key: `${cmd}+w`,
+    onPress: () => {
+      process.exit()
+    },
+    bar: "left" as const,
+  }
+
+  let abortShortcut = {
+    name: `Abort`,
+    key: `escape`,
+    onPress: () => {
+      controller.abort()
+    },
+    bar: "left" as const,
+  }
+
+  let stopShortcuts = [
+    closeShortcut,
+    abortShortcut,
+    {
+      name: `Stop Dictation`,
+      key: `${cmd}+.`,
+      onPress: onPressStopDictation,
+      bar: "right" as const,
+    },
+  ]
+
+  let dictateShortcuts = [
+    closeShortcut,
+    abortShortcut,
+    {
+      name: `Dictate`,
+      key: `${cmd}+.`,
+      onPress: onPressDictate,
+      bar: "right" as const,
+    },
+  ]
+
+  return {
+    shortcuts: dictateShortcuts,
+    dictate: onPressDictate,
+  }
+}
+
+// This works because esbuild will bundle this file with the main script.
+export let filename = path.parse(import.meta.url).name + ".md"
+export let docs = await readFile(projectPath("docs", filename), "utf-8")
+export let prompt = docs.split("## AI Prompt")?.[1]?.trim()

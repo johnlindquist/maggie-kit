@@ -1,20 +1,20 @@
 // Preview: docs
 // Name: Summarize Selected Text
+// Author: John Lindquist
+// Twitter: @johnlindquist
+// Preview: docs
 
 import "@johnlindquist/kit"
-import { createAIEditor } from "../lib/maggie-kit"
+import { createAIStreamer, createShortcuts, prompt } from "../lib/maggie-kit"
 
 let text = await getSelectedText()
 
-let systemPrompt = `
-- Summarize selected text using Markdown
-- Lean heavily on using lists
-- Place double-square brackets around key words
-    Examples:
-    - [[key word]]
-`
+let aiStreamer = await createAIStreamer(prompt)
+let { shortcuts } = await createShortcuts(aiStreamer)
 
-let summarizeEditor = await createAIEditor(systemPrompt)
-
-await summarizeEditor(text)
-
+await editor({
+  onInit: async () => {
+    aiStreamer(text)
+  },
+  shortcuts,
+})

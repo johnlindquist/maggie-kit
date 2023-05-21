@@ -1,22 +1,18 @@
-// Preview: docs
 // Name: Brainstorm 🧠
+// Description: Dictate Your Thoughts
+// Author: John Lindquist
+// Twitter: @johnlindquist
+// Preview: docs
 
 import "@johnlindquist/kit"
-import { createAIEditor, dictate } from "../lib/maggie-kit"
+import { createAIStreamer, createShortcuts, docs, prompt } from "../lib/maggie-kit"
 
-let systemPrompt = `
-- Act as a thought organizer
-- The following is a transcript of a dictated brainstorm of wandering thoughts and ideas
-- The AI will organize them into key points and action items
-`
+let aiStreamer = await createAIStreamer(prompt)
+let { shortcuts, dictate } = await createShortcuts(aiStreamer)
 
-// The editor has its own internal memory
-let brainStormEditor = await createAIEditor(systemPrompt)
-
-while (true) {
-  let instructions = await dictate({
-    placeholder: `🧠`,
-  })
-
-  await brainStormEditor(instructions)
-}
+await editor({
+  onInit: dictate,
+  previewWidthPercent: 25,
+  preview: md(docs),
+  shortcuts,
+})

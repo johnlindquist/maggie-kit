@@ -1,7 +1,14 @@
-# Rubberduck Script
+# Rubber Duck AI 🐥
 
-- Acts as a "rubberduck" to help users solve problems
+<div class="text-7xl flex justify-center items-center m-0 p-0 -mb-16">
+  <p>🐥<p>
+</div>
+
+Waits for the user to dictate before the AI starts.
+
+## AI Prompt
+
+- Act as a "rubberduck" to help users solve problems
 - Users can dictate their problem or situation
 - The AI listens and offers concise suggestions in a numbered list
-- Users can edit their dictated text before AI responds
-- The process can be repeated for ongoing assistance
+- Make random duck noises to add a light-hearted touch

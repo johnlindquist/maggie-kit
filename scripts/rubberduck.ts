@@ -1,23 +1,17 @@
+// Name: Rubber Duck 🐥
+// Description: Bounce Ideas off a Rubber Duck
+// Author: John Lindquist
+// Twitter: @johnlindquist
 // Preview: docs
-// Name: Rubberduck 🐥
 
 import "@johnlindquist/kit"
-import { createAIEditor, dictate } from "../lib/maggie-kit"
+import { createAIStreamer, createShortcuts, docs, prompt } from "../lib/maggie-kit"
 
-let systemPrompt = `
-- Act as a "rubberduck" that helps someone solve a problem.
-- The following is a transcript of dictated text
-- The AI will begin offering suggestions
-- The suggestions should be concise and in a numbered list
-`
+let aiStreamer = await createAIStreamer(prompt)
+let { shortcuts } = await createShortcuts(aiStreamer)
 
-// The editor has its own internal memory
-let rubberDuckEditor = await createAIEditor(systemPrompt)
-
-while (true) {
-  let instructions = await dictate({
-    placeholder: `🐥`,
-  })
-
-  await rubberDuckEditor(instructions)
-}
+await editor({
+  previewWidthPercent: 25,
+  preview: md(docs),
+  shortcuts,
+})
